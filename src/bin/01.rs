@@ -1,36 +1,29 @@
 advent_of_code::solution!(1);
 
 pub fn part_one(input: &str) -> Option<u32> {
-    let lines: Vec<&str> = input.split('\n').collect();
-
-    let mut sum = 0;
-    for line in lines {
-        // println!("{}", line);
-        if line.is_empty() {
-            continue;
-        }
-
-        let maybe_first_digit_as_char = line.chars().find(|&c| c.is_digit(10));
-        let maybe_last_digit_as_char = line.chars().rev().find(|&c| c.is_digit(10));
-        if maybe_first_digit_as_char.is_none() || maybe_last_digit_as_char.is_none() {
-            return None;
-        }
-
-        let maybe_first_digit = maybe_first_digit_as_char.unwrap().to_digit(10);
-        let maybe_last_digit = maybe_last_digit_as_char.unwrap().to_digit(10);
-        if maybe_first_digit.is_none() || maybe_last_digit.is_none() {
-            return None;
-        }
-
-        let code = (10 * maybe_first_digit.unwrap()) + maybe_last_digit.unwrap();
-        // println!("{}", code);
-
-        sum = sum + code;
+    fn first_digit(line: &str) -> Option<u32> {
+        line.chars().find(|&c| c.is_digit(10))?.to_digit(10)
     }
 
-    // println!("{}", sum);
-    Some(sum)
+    fn last_digit(line: &str) -> Option<u32> {
+        line.chars().rev().find(|&c| c.is_digit(10))?.to_digit(10)
+    }
+
+    fn calibration_value(line: &str) -> Option<u32> {
+        Some((10 * first_digit(line)?) + last_digit(line)?)
+    }
+
+    let total = input
+        .split('\n')
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .map(|line| calibration_value(line).unwrap())
+        .sum();
+
+    Some(total)
 }
+
+// use regex::Regex;
 
 pub fn part_two(input: &str) -> Option<u32> {
     let _lines: Vec<&str> = input.split('\n').collect();

@@ -6,7 +6,7 @@ use nom::{
     combinator::map_res,
     error::Error,
     multi::separated_list1,
-    sequence::separated_pair,
+    sequence::{delimited, preceded, separated_pair},
     Finish, IResult,
 };
 use std::collections::HashSet;
@@ -35,34 +35,36 @@ impl Card {
     }
 }
 
+fn parse_number(input: &str) -> IResult<&str, u32> {
+    let (i, number) = map_res(digit1, str::parse)(input)?;
+    Ok((i, number))
+}
+
+fn parse_id(input: &str) -> IResult<&str, u32> {
+    let (i, id) = preceded(tag("Card"), preceded(space1, parse_number))(input)?;
+    Ok((i, id))
+}
+
+fn parse_numbers(input: &str) -> IResult<&str, Vec<u32>> {
+    let (i, numbers) = delimited(space0, separated_list1(space1, parse_number), space0)(input)?;
+    Ok((i, numbers))
+}
+
+fn parse_fields_of_card(input: &str) -> IResult<&str, (u32, Vec<u32>, Vec<u32>)> {
+    let (i, (id, (winning_numbers, numbers))) = separated_pair(
+        parse_id,
+        char(':'),
+        separated_pair(parse_numbers, char('|'), parse_numbers),
+    )(input)?;
+    Ok((i, (id, winning_numbers, numbers)))
+}
+
 impl FromStr for Card {
     type Err = Error<String>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        fn parse_id(input: &str) -> IResult<&str, u32> {
-            let (i, _) = tag("Card")(input)?;
-            let (i, _) = space1(i)?;
-            let (i, id) = map_res(digit1, str::parse)(i)?;
-
-            Ok((i, id))
-        }
-
-        fn parse_numbers(input: &str) -> IResult<&str, Vec<u32>> {
-            let (i, _) = space0(input)?;
-            let (i, numbers) = separated_list1(space1, map_res(digit1, str::parse))(i)?;
-            let (i, _) = space0(i)?;
-
-            Ok((i, numbers))
-        }
-
-        match separated_pair(
-            parse_id,
-            char(':'),
-            separated_pair(parse_numbers, char('|'), parse_numbers),
-        )(s)
-        .finish()
-        {
-            Ok((_remaining, (id, (winning_numbers, numbers)))) => Ok(Card {
+        match parse_fields_of_card(s).finish() {
+            Ok((_remaining, (id, winning_numbers, numbers))) => Ok(Card {
                 id,
                 winning_numbers: HashSet::from_iter(winning_numbers),
                 numbers,

@@ -72,9 +72,18 @@ pub fn part_one(input: &str) -> Option<u64> {
     Some(combinations)
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    // Quicker to do by hand... => 34123437).
-    None
+pub fn part_two(input: &str) -> Option<u64> {
+    // Quicker to do by hand... => example: 71503, puzzle: 34123437).
+    // But, if one edits the spaces out of the file...
+    let (i, times) = parse_times(input).ok()?;
+    let (_, distances) = parse_distances(i).ok()?;
+    let combinations = times
+        .into_iter()
+        .zip(distances)
+        .map(|(time, distance)| ways_to_win(time, distance))
+        .product();
+
+    Some(combinations)
 }
 
 #[cfg(test)]
@@ -90,6 +99,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(71503));
     }
 }

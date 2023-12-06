@@ -11,21 +11,6 @@ use nom::{
 };
 use std::str::FromStr;
 
-// almanac
-// map
-// source category
-// destination category
-// source number
-// desination number
-// ranges
-// range_start
-// range_length
-// A span (range_start, range_length)...
-// source range start
-// destination range start
-// Any source numbers that aren't mapped correspond to the same destination number.
-// the lowest "location" number that corresponds to any of the initial "seeds".
-
 type Distance = u64;
 type Descriptor = u64;
 type Descriptors = Vec<Descriptor>;
@@ -65,12 +50,13 @@ fn parse_range(input: &str) -> IResult<&str, Range> {
 }
 
 impl Range {
-    fn _maybe_destination(&self, source: Descriptor) -> Option<Descriptor> {
-        if source >= self.source_start && source < self.source_start + self.length {
-            Some(self.destination_start + source - self.source_start)
-        } else {
-            None
-        }
+    fn contains(&self, source: Descriptor) -> bool {
+        source >= self.source_start && source < self.source_start + self.length
+    }
+
+    fn get_destination(&self, source: Descriptor) -> Descriptor {
+        assert!(self.contains(source));
+        self.destination_start + source - self.source_start
     }
 }
 
@@ -103,6 +89,16 @@ fn parse_map(input: &str) -> IResult<&str, Map> {
             ranges,
         },
     ))
+}
+
+impl Map {
+    fn get_destination(&self, source: Descriptor) -> Descriptor {
+        let maybe_range = self.ranges.iter().find(|&range| range.contains(source));
+        match maybe_range {
+            Some(range) => range.get_destination(source),
+            None => source,
+        }
+    }
 }
 
 type Maps = Vec<Map>;
@@ -150,11 +146,23 @@ impl FromStr for Almanac {
     }
 }
 
+impl Almanac {
+    fn get_location_for_seed(&self, seed: Descriptor) -> Descriptor {
+        self.maps
+            .iter()
+            .fold(seed, |source, map| map.get_destination(source))
+    }
+}
+
 pub fn part_one(input: &str) -> Option<Descriptor> {
     let almanac = Almanac::from_str(input).ok()?;
-    println!("{:?}", almanac);
+    // println!("{:?}", almanac);
 
-    let nearest_location = almanac.seeds.into_iter().map(|_seed| 0u64).min()?;
+    let nearest_location = almanac
+        .seeds
+        .iter()
+        .map(|&seed| almanac.get_location_for_seed(seed))
+        .min()?;
 
     Some(nearest_location)
 }

@@ -24,6 +24,7 @@ enum Category {
 
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 enum Card {
+    Joker,
     Two,
     Three,
     Four,
@@ -33,7 +34,6 @@ enum Card {
     Eight,
     Nine,
     Ten,
-    Jack,
     Queen,
     King,
     Ace,
@@ -42,6 +42,7 @@ enum Card {
 fn parse_card(input: &str) -> IResult<&str, Card> {
     let (i, c) = verify(anychar, |c| c.is_alphanumeric())(input)?;
     let card = match c {
+        'J' => Card::Joker,
         '2' => Card::Two,
         '3' => Card::Three,
         '4' => Card::Four,
@@ -51,7 +52,6 @@ fn parse_card(input: &str) -> IResult<&str, Card> {
         '8' => Card::Eight,
         '9' => Card::Nine,
         'T' => Card::Ten,
-        'J' => Card::Jack,
         'Q' => Card::Queen,
         'K' => Card::King,
         'A' => Card::Ace,
@@ -83,16 +83,38 @@ struct Hand {
     bid: Bid,
 }
 
-fn get_category(cards: &Cards) -> Category {
-    let counts = cards
-        .iter()
-        .collect::<Counter<_>>()
-        .most_common()
+fn get_category_jokers_wild(cards: &Cards) -> Category {
+    let counted_cards = (|| {
+        let joker_counter = cards
+            .iter()
+            .filter(|&card| *card == Card::Joker)
+            .collect::<Counter<_>>();
+
+        let mut other_card_counter = cards
+            .iter()
+            .filter(|&card| *card != Card::Joker)
+            .collect::<Counter<_>>();
+
+        // Jokers count as best, i.e. most common and then highest, other card (should it exist) to
+        // yield the highest possible category. Otherwise just count them as Aces!
+        let joker_count = joker_counter[&Card::Joker];
+        let most_common_then_highest_other_cards =
+            other_card_counter.most_common_tiebreaker(|a, b| b.cmp(a));
+        let best_other_card = match most_common_then_highest_other_cards.iter().nth(0) {
+            Some((other_card, _)) => &other_card,
+            None => &Card::Ace,
+        };
+        other_card_counter.update(vec![best_other_card; joker_count]);
+
+        other_card_counter.most_common_tiebreaker(|a, b| b.cmp(a))
+    })();
+
+    let card_counts = counted_cards
         .iter()
         .map(|(_, count)| *count)
         .collect::<Vec<usize>>();
 
-    match counts[..] {
+    match card_counts[..] {
         [5] => Category::FiveOfAKind,
         [4, 1] => Category::FourOfAKind,
         [3, 2] => Category::FullHouse,
@@ -107,7 +129,7 @@ fn get_category(cards: &Cards) -> Category {
 fn parse_hand(input: &str) -> IResult<&str, Hand> {
     // 32T3K 765
     let (i, (cards, bid)) = separated_pair(parse_cards, space1, parse_bid)(input)?;
-    let category = get_category(&cards);
+    let category = get_category_jokers_wild(&cards);
     Ok((
         i,
         Hand {
@@ -180,8 +202,22 @@ pub fn part_one(input: &str) -> Option<Winnings> {
     Some(total_winnings)
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<Winnings> {
+    let game = Game::from_str(input).ok()?;
+    // println!("{:?}", game);
+
+    let total_winnings = game
+        .ranked_hands()
+        .into_iter()
+        .enumerate()
+        .map(|(idx, hand)| {
+            let rank = (idx + 1) as Bid;
+            rank * hand.bid
+        })
+        .sum();
+    // println!("{:?}", total_winnings);
+
+    Some(total_winnings)
 }
 
 #[cfg(test)]
@@ -197,6 +233,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(5905));
     }
 }

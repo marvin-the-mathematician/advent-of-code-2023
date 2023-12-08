@@ -2,16 +2,27 @@ advent_of_code::solution!(7);
 
 use counter::Counter;
 use nom::{
-    character::complete::{alphanumeric1, digit1, line_ending, space1},
-    combinator::map_res,
+    character::complete::{anychar, digit1, line_ending, space1},
+    combinator::{map_res, verify},
     error::Error,
-    multi::separated_list1,
+    multi::{count, separated_list1},
     sequence::separated_pair,
     Finish, IResult,
 };
 use std::str::FromStr;
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+enum Category {
+    HighCard,
+    OnePair,
+    TwoPair,
+    ThreeOfAKind,
+    FullHouse,
+    FourOfAKind,
+    FiveOfAKind,
+}
+
+#[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 enum Card {
     Two,
     Three,
@@ -28,37 +39,36 @@ enum Card {
     Ace,
 }
 
+fn parse_card(input: &str) -> IResult<&str, Card> {
+    let (i, c) = verify(anychar, |c| c.is_alphanumeric())(input)?;
+    let card = match c {
+        '2' => Card::Two,
+        '3' => Card::Three,
+        '4' => Card::Four,
+        '5' => Card::Five,
+        '6' => Card::Six,
+        '7' => Card::Seven,
+        '8' => Card::Eight,
+        '9' => Card::Nine,
+        'T' => Card::Ten,
+        'J' => Card::Jack,
+        'Q' => Card::Queen,
+        'K' => Card::King,
+        'A' => Card::Ace,
+        _ => panic!(),
+    };
+    Ok((i, card))
+}
+
 type Cards = Vec<Card>;
 
 fn parse_cards(input: &str) -> IResult<&str, Cards> {
     // 32T3K
-    let (i, parsed) = alphanumeric1(input)?;
-    Ok((
-        i,
-        parsed
-            .chars()
-            .into_iter()
-            .map(|c| match c {
-                '2' => Card::Two,
-                '3' => Card::Three,
-                '4' => Card::Four,
-                '5' => Card::Five,
-                '6' => Card::Six,
-                '7' => Card::Seven,
-                '8' => Card::Eight,
-                '9' => Card::Nine,
-                'T' => Card::Ten,
-                'J' => Card::Jack,
-                'Q' => Card::Queen,
-                'K' => Card::King,
-                'A' => Card::Ace,
-                _ => panic!(),
-            })
-            .collect::<Vec<Card>>(),
-    ))
+    let (i, cards) = count(parse_card, 5)(input)?;
+    Ok((i, cards))
 }
 
-type Bid = u32;
+type Bid = u64;
 
 fn parse_bid(input: &str) -> IResult<&str, Bid> {
     // 765
@@ -66,11 +76,11 @@ fn parse_bid(input: &str) -> IResult<&str, Bid> {
     Ok((i, bid))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 struct Hand {
+    category: Category,
     cards: Cards,
     bid: Bid,
-    category: Category,
 }
 
 fn get_category(cards: &Cards) -> Category {
@@ -101,31 +111,16 @@ fn parse_hand(input: &str) -> IResult<&str, Hand> {
     Ok((
         i,
         Hand {
+            category,
             cards,
             bid,
-            category,
         },
     ))
 }
 
-#[derive(Debug, PartialEq)]
-enum Category {
-    FiveOfAKind,
-    FourOfAKind,
-    FullHouse,
-    ThreeOfAKind,
-    TwoPair,
-    OnePair,
-    HighCard,
-}
-
-//type Categories = Vec<Category>;
-
-impl Hand {}
-
 type Hands = Vec<Hand>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
 struct Game {
     hands: Hands,
 }
@@ -157,11 +152,32 @@ impl FromStr for Game {
     }
 }
 
-pub fn part_one(input: &str) -> Option<u32> {
-    let game = Game::from_str(input).ok()?;
-    println!("{:?}", game);
+impl Game {
+    fn ranked_hands(&self) -> Hands {
+        let mut hands = self.hands.to_vec();
+        hands.sort();
+        hands
+    }
+}
 
-    Some(0)
+type Winnings = Bid;
+
+pub fn part_one(input: &str) -> Option<Winnings> {
+    let game = Game::from_str(input).ok()?;
+    // println!("{:?}", game);
+
+    let total_winnings = game
+        .ranked_hands()
+        .into_iter()
+        .enumerate()
+        .map(|(idx, hand)| {
+            let rank = (idx + 1) as Bid;
+            rank * hand.bid
+        })
+        .sum();
+    // println!("{:?}", total_winnings);
+
+    Some(total_winnings)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {
@@ -175,7 +191,7 @@ mod tests {
     #[test]
     fn test_part_one() {
         let result = part_one(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(6440));
     }
 
     #[test]

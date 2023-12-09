@@ -141,10 +141,10 @@ impl Graph {
 pub fn part_one(input: &str) -> Option<u32> {
     let graph = Graph::from_str(input).ok()?;
     let source = Descriptor {
-        id: "AAA".to_string(),
+        id: String::from("AAA"),
     };
     let goal = Descriptor {
-        id: "ZZZ".to_string(),
+        id: String::from("ZZZ"),
     };
 
     let mut steps = 0;

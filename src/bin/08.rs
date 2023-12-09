@@ -127,12 +127,12 @@ impl FromStr for Graph {
 }
 
 impl Graph {
-    fn get_neighbouring_descriptor_on_left(&self, descriptor: Descriptor) -> Descriptor {
+    fn get_neighbouring_descriptor_on_left(&self, descriptor: &Descriptor) -> Descriptor {
         let neighbours = self.lookup.get(&descriptor).unwrap();
         neighbours.descriptor_on_left.clone()
     }
 
-    fn get_neighbouring_descriptor_on_right(&self, descriptor: Descriptor) -> Descriptor {
+    fn get_neighbouring_descriptor_on_right(&self, descriptor: &Descriptor) -> Descriptor {
         let neighbours = self.lookup.get(&descriptor).unwrap();
         neighbours.descriptor_on_right.clone()
     }
@@ -158,8 +158,8 @@ pub fn part_one(input: &str) -> Option<u32> {
             } else {
                 steps += 1;
                 Continue(match direction {
-                    Direction::Left => graph.get_neighbouring_descriptor_on_left(descriptor),
-                    Direction::Right => graph.get_neighbouring_descriptor_on_right(descriptor),
+                    Direction::Left => graph.get_neighbouring_descriptor_on_left(&descriptor),
+                    Direction::Right => graph.get_neighbouring_descriptor_on_right(&descriptor),
                 })
             }
         })

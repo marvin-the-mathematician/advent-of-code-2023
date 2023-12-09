@@ -43,22 +43,42 @@ fn differences(values: &Values) -> Values {
 }
 
 impl History {
-    fn extrapolated_value(&self) -> Value {
+    fn extrapolated_future_value(&self) -> Value {
         let length = self.values.len();
-        let last = self.values.last().unwrap();
-        let first_differences = differences(&self.values);
-        let value = last
-            + (0..length)
-                .scan(first_differences, |values, _| {
-                    if values.iter().all(|&value| value == 0) {
-                        None
-                    } else {
-                        let result = values.last().unwrap().clone();
-                        *values = differences(values);
-                        Some(result)
-                    }
-                })
-                .sum::<Value>();
+        let value = (0..length)
+            .scan(self.values.clone(), |values, _| {
+                if values.iter().all(|&value| value == 0) {
+                    None
+                } else {
+                    let result = values.last().unwrap().clone();
+                    *values = differences(values);
+                    Some(result)
+                }
+            })
+            .reduce(|a, b| a + b)
+            .unwrap();
+
+        value
+    }
+
+    fn extrapolated_past_value(&self) -> Value {
+        let length = self.values.len();
+        let mut sign = 1 as Value;
+        let value = (0..length)
+            .scan(self.values.clone(), |values, _| {
+                if values.iter().all(|&value| value == 0) {
+                    None
+                } else {
+                    let result = values.first().unwrap().clone();
+                    *values = differences(values);
+                    Some(result)
+                }
+            })
+            .reduce(|a, b| {
+                sign *= -1;
+                a + (sign * b)
+            })
+            .unwrap();
 
         value
     }
@@ -99,14 +119,23 @@ pub fn part_one(input: &str) -> Option<Value> {
     let total = report
         .histories
         .into_iter()
-        .map(|history| history.extrapolated_value())
+        .map(|history| history.extrapolated_future_value())
         .sum();
 
     Some(total)
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<Value> {
+    let report = Report::from_str(input).ok()?;
+    // println!("{:?}\n", report);
+
+    let total = report
+        .histories
+        .into_iter()
+        .map(|history| history.extrapolated_past_value())
+        .sum();
+
+    Some(total)
 }
 
 #[cfg(test)]
@@ -122,6 +151,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(2));
     }
 }

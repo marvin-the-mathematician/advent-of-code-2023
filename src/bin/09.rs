@@ -34,25 +34,31 @@ fn parse_history(input: &str) -> IResult<&str, History> {
     Ok((i, History { values }))
 }
 
+fn differences(values: &Values) -> Values {
+    values
+        .iter()
+        .tuple_windows()
+        .map(|(a, b)| b - a)
+        .collect::<Values>()
+}
+
 impl History {
     fn extrapolated_value(&self) -> Value {
         let length = self.values.len();
-        let value = (0..length)
-            .scan(self.values.clone(), |values, _| {
-                if values.iter().all(|&difference| difference == 0) {
-                    None
-                } else {
-                    let last_value = values.last().unwrap().clone();
-                    *values = values
-                        .iter()
-                        .tuple_windows()
-                        .map(|(a, b)| b - a)
-                        .collect::<Values>();
-
-                    Some(last_value)
-                }
-            })
-            .sum();
+        let last = self.values.last().unwrap();
+        let first_differences = differences(&self.values);
+        let value = last
+            + (0..length)
+                .scan(first_differences, |values, _| {
+                    if values.iter().all(|&value| value == 0) {
+                        None
+                    } else {
+                        let result = values.last().unwrap().clone();
+                        *values = differences(values);
+                        Some(result)
+                    }
+                })
+                .sum::<Value>();
 
         value
     }

@@ -1,7 +1,5 @@
 advent_of_code::solution!(8);
 
-use itertools::FoldWhile::{Continue, Done};
-use itertools::Itertools;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -127,45 +125,48 @@ impl FromStr for Graph {
 }
 
 impl Graph {
-    fn get_neighbouring_descriptor_on_left(&self, descriptor: &Descriptor) -> Descriptor {
-        let neighbours = self.lookup.get(&descriptor).unwrap();
-        neighbours.descriptor_on_left.clone()
+    fn neighbouring_descriptor_on_left(&self, descriptor: &Descriptor) -> Descriptor {
+        self.lookup
+            .get(&descriptor)
+            .unwrap()
+            .descriptor_on_left
+            .clone()
     }
 
-    fn get_neighbouring_descriptor_on_right(&self, descriptor: &Descriptor) -> Descriptor {
-        let neighbours = self.lookup.get(&descriptor).unwrap();
-        neighbours.descriptor_on_right.clone()
+    fn neighbouring_descriptor_on_right(&self, descriptor: &Descriptor) -> Descriptor {
+        self.lookup
+            .get(&descriptor)
+            .unwrap()
+            .descriptor_on_right
+            .clone()
     }
 }
 
 pub fn part_one(input: &str) -> Option<u32> {
     let graph = Graph::from_str(input).ok()?;
-    let source = Descriptor {
+    let start = Descriptor {
         id: String::from("AAA"),
     };
-    let goal = Descriptor {
-        id: String::from("ZZZ"),
-    };
 
-    let mut steps = 0;
-    let _ = graph
+    let steps = graph
         .directions
         .iter()
         .cycle()
-        .fold_while(source, |descriptor, direction| {
-            if descriptor == goal {
-                Done(descriptor)
+        .scan(start, |descriptor, direction| {
+            if descriptor.id == "ZZZ" {
+                return None;
             } else {
-                steps += 1;
-                Continue(match direction {
-                    Direction::Left => graph.get_neighbouring_descriptor_on_left(&descriptor),
-                    Direction::Right => graph.get_neighbouring_descriptor_on_right(&descriptor),
-                })
+                *descriptor = match direction {
+                    Direction::Left => graph.neighbouring_descriptor_on_left(descriptor),
+                    Direction::Right => graph.neighbouring_descriptor_on_right(descriptor),
+                }
             }
-        })
-        .into_inner();
 
-    Some(steps)
+            Some('+')
+        })
+        .count();
+
+    Some(steps as u32)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {

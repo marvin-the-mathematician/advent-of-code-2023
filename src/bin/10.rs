@@ -197,8 +197,8 @@ impl Maze {
         }
     }
 
-    fn tile_at(&self, index: Index) -> Tile {
-        return self.tiles[index];
+    fn tile_at(&self, index: &Index) -> Tile {
+        return self.tiles[*index];
     }
 
     fn tile_at_start(&self) -> Tile {
@@ -207,7 +207,7 @@ impl Maze {
             .into_iter()
             .map(|direction| (direction, adjacent_index_at(direction, &self.start_index)))
             .filter(|(direction, index)| {
-                let tile = self.tile_at(*index);
+                let tile = self.tile_at(index);
                 let from = reversed(*direction);
                 match tile {
                     Tile::Link { from: a, to: b } if a == from || b == from => true,
@@ -228,14 +228,50 @@ impl Maze {
     }
 }
 
-pub fn part_one(input: &str) -> Option<u32> {
+pub fn part_one(input: &str) -> Option<usize> {
     let maze = Maze::from_str(input).ok()?;
     // println!("{:?}\n", maze);
 
-    let tile = maze.tile_at_start();
-    println!("{:?}\n", tile);
+    let start_index = maze.start_index;
+    let start_tile = maze.tile_at_start();
+    let start_direction = match start_tile {
+        Tile::Link {
+            from: _,
+            to: direction,
+        } => direction,
+        _ => panic!(),
+    };
+    // println!("start_index: {:?}", start_index);
+    // println!("start_tile: {:?}", start_tile);
+    // println!("start_direction: {:?}\n", start_direction);
 
-    None
+    let steps_in_loop = (0..)
+        .scan(
+            (start_index, start_tile, start_direction),
+            |(index, tile, direction), idx| {
+                // println!("index: {:?}", index);
+                // println!("tile: {:?}", tile);
+                // println!("direction: {:?}\n", direction);
+                if *tile == Tile::Start {
+                    return None;
+                } else {
+                    let from = reversed(*direction);
+                    *index = adjacent_index_at(*direction, index);
+                    *tile = maze.tile_at(index);
+                    *direction = match *tile {
+                        Tile::Link { from: a, to: b } if a == from => b,
+                        Tile::Link { from: a, to: b } if b == from => a,
+                        Tile::Start => start_direction,
+                        _ => panic!(),
+                    };
+                }
+
+                Some(idx)
+            },
+        )
+        .count();
+
+    Some(steps_in_loop / 2)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {
@@ -249,7 +285,7 @@ mod tests {
     #[test]
     fn test_part_one() {
         let result = part_one(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(4));
     }
 
     #[test]

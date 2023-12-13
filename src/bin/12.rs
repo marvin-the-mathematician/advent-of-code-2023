@@ -12,7 +12,7 @@ use nom::{
 };
 use std::str::FromStr;
 
-#[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 enum Status {
     Unknown,
     Damaged,
@@ -149,6 +149,34 @@ fn cached_arrangements(statuses: Statuses, runs: Runs) -> Arrangements {
 }
 
 impl Record {
+    fn unfolded(record: &Record) -> Record {
+        let Record {
+            row: Row { statuses },
+            runs,
+        } = record;
+
+        let unfolded_statuses = (0..4)
+            .flat_map(|_| {
+                statuses
+                    .iter()
+                    .map(|status| *status)
+                    .chain((0..1).map(|_| Status::Unknown))
+            })
+            .chain(statuses.iter().map(|status| *status))
+            .collect::<Statuses>();
+
+        let unfolded_runs = (0..5)
+            .flat_map(|_| runs.iter().map(|run| *run))
+            .collect::<Runs>();
+
+        Record {
+            row: Row {
+                statuses: unfolded_statuses,
+            },
+            runs: unfolded_runs,
+        }
+    }
+
     fn arrangements(&self) -> Arrangements {
         cached_arrangements(self.row.statuses.clone(), self.runs.clone())
     }
@@ -193,8 +221,18 @@ pub fn part_one(input: &str) -> Option<Arrangements> {
     Some(total)
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<Arrangements> {
+    let report = Report::from_str(input).ok()?;
+    // println!("{:?}\n", report);
+
+    let total = report
+        .records
+        .iter()
+        .map(|record| Record::unfolded(record))
+        .map(|unfolded_record| unfolded_record.arrangements())
+        .sum();
+
+    Some(total)
 }
 
 #[cfg(test)]
@@ -210,6 +248,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(525152));
     }
 }

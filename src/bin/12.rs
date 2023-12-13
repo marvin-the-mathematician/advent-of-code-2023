@@ -1,45 +1,49 @@
 advent_of_code::solution!(12);
 
-use nom::character::complete::digit1;
-use nom::combinator::map_res;
-use nom::multi::many1;
+use cached::proc_macro::cached;
 use nom::{
     branch::alt,
-    character::complete::{char, newline},
+    character::complete::{char, digit1, newline},
+    combinator::map_res,
     error::Error,
-    multi::separated_list1,
+    multi::{many1, separated_list1},
     sequence::separated_pair,
     Finish, IResult,
 };
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
-enum Condition {
+enum Status {
     Unknown,
     Damaged,
     Operational,
 }
 
-fn parse_condition(input: &str) -> IResult<&str, Condition> {
+fn parse_status(input: &str) -> IResult<&str, Status> {
     let (i, c) = alt((char('?'), char('#'), char('.')))(input)?;
     let condition = match c {
-        '?' => Condition::Unknown,
-        '#' => Condition::Damaged,
-        '.' => Condition::Operational,
+        '?' => Status::Unknown,
+        '#' => Status::Damaged,
+        '.' => Status::Operational,
         _ => panic!(),
     };
     Ok((i, condition))
 }
 
-type Row = Vec<Condition>;
+type Statuses = Vec<Status>;
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+struct Row {
+    statuses: Statuses,
+}
 
 fn parse_row(input: &str) -> IResult<&str, Row> {
     // ...#.....
-    let (i, row) = many1(parse_condition)(input)?;
-    Ok((i, row))
+    let (i, statuses) = many1(parse_status)(input)?;
+    Ok((i, Row { statuses }))
 }
 
-type Run = u32;
+type Run = usize;
 
 fn parse_run(input: &str) -> IResult<&str, Run> {
     let (i, run) = map_res(digit1, str::parse)(input)?;
@@ -54,7 +58,9 @@ fn parse_runs(input: &str) -> IResult<&str, Runs> {
     Ok((i, runs))
 }
 
-#[derive(Debug, PartialEq)]
+type Arrangements = usize;
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 struct Record {
     row: Row,
     runs: Runs,
@@ -63,6 +69,89 @@ struct Record {
 fn parse_record(input: &str) -> IResult<&str, Record> {
     let (i, (row, runs)) = separated_pair(parse_row, char(' '), parse_runs)(input)?;
     Ok((i, Record { row, runs }))
+}
+
+#[cached]
+fn cached_arrangements(statuses: Statuses, runs: Runs) -> Arrangements {
+    fn arrangments_given_possible_match(
+        run: &Run,
+        statuses: &Statuses,
+        runs: &Runs,
+    ) -> Arrangements {
+        // For a match to exist the next run length statuses must not be Operational and the
+        // following status must not be Damaged (so that the run ends).
+        // Otherwise, a match is not possible.
+        return if statuses[..*run]
+            .iter()
+            .all(|status| *status != Status::Operational)
+            && (statuses.len() == *run || statuses[*run] != Status::Damaged)
+        {
+            // Consume the match and continue...
+            // Be careful not to run off the end since we need to consume the gap if it exists...
+            if statuses.len() == *run {
+                cached_arrangements(statuses[(*run)..].to_vec(), runs[1..].to_vec())
+            } else {
+                cached_arrangements(statuses[(*run + 1)..].to_vec(), runs[1..].to_vec())
+            }
+        } else {
+            0
+        };
+    }
+
+    // If there are no unprocessed statuses...
+    if statuses.is_empty() {
+        // If there are no unmatched runs then we are done. Otherwise, a match is not possible.
+        return if runs.is_empty() { 1 } else { 0 };
+    }
+    assert!(!statuses.is_empty());
+
+    // If there are unprocessed statuses...
+    if runs.is_empty() {
+        // If there are no unmatched runs then we are done as long as all remaining statuses are not
+        // Damaged; since all Unknown statuses could be chosen as Operational.
+        // Otherwise, a match is not possible.
+        return if !statuses.contains(&Status::Damaged) {
+            1
+        } else {
+            0
+        };
+    }
+    assert!(!runs.is_empty());
+
+    // If there is an unprocessed status and an unprocessed run...
+    let status = statuses.first().unwrap();
+    let run = runs.first().unwrap();
+
+    // If the number of unprocessed statuses is too small to accommodate the unprocessed runs...
+    let min_match_len = runs.iter().sum::<Run>() + runs.len() - 1;
+    if statuses.len() < min_match_len {
+        return 0;
+    }
+
+    // If the next status is Operational then we can skip it and continue as if it wasn't there...
+    if *status == Status::Operational {
+        return cached_arrangements(statuses[1..].to_vec(), runs.clone());
+    }
+    assert_ne!(*status, Status::Operational);
+
+    // If the next status is Damaged then we should check for a match with the next run...
+    if *status == Status::Damaged {
+        return arrangments_given_possible_match(run, &statuses, &runs);
+    }
+    assert_ne!(*status, Status::Damaged);
+    assert_eq!(*status, Status::Unknown);
+
+    // We have to branch here since the next status is unknown...
+    // Return the sum of the arrangements both assuming the next status is Operational or
+    // assuming the next status is Damaged...
+    cached_arrangements(statuses[1..].to_vec(), runs.clone())
+        + arrangments_given_possible_match(run, &statuses, &runs)
+}
+
+impl Record {
+    fn arrangements(&self) -> Arrangements {
+        cached_arrangements(self.row.statuses.clone(), self.runs.clone())
+    }
 }
 
 type Records = Vec<Record>;
@@ -91,11 +180,17 @@ impl FromStr for Report {
     }
 }
 
-pub fn part_one(input: &str) -> Option<u32> {
+pub fn part_one(input: &str) -> Option<Arrangements> {
     let report = Report::from_str(input).ok()?;
-    println!("{:?}\n", report);
+    // println!("{:?}\n", report);
 
-    None
+    let total = report
+        .records
+        .iter()
+        .map(|record| record.arrangements())
+        .sum();
+
+    Some(total)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {
@@ -109,7 +204,7 @@ mod tests {
     #[test]
     fn test_part_one() {
         let result = part_one(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(21));
     }
 
     #[test]

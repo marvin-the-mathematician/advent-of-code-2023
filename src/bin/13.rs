@@ -11,6 +11,7 @@ use nom::{
     multi::{count, separated_list1},
     Finish, IResult,
 };
+use std::cmp::min;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Default, Debug, Eq, PartialEq)]
@@ -56,8 +57,8 @@ type Features = Array<Feature, Ix2>;
 
 #[derive(Debug)]
 struct Pattern {
-    length: usize,
-    width: usize,
+    row_count: usize,
+    column_count: usize,
     features: Features,
 }
 
@@ -67,36 +68,59 @@ fn parse_pattern(input: &str) -> IResult<&str, Pattern> {
     assert!(!rows.is_empty());
     assert!(rows.iter().tuple_windows().all(|(a, b)| a.len() == b.len()));
 
-    let length = rows.len();
-    let width = rows.first().map_or(0, |row| row.len());
+    let row_count = rows.len();
+    let column_count = rows.first().map_or(0, |row| row.len());
     let mut data = Vec::new();
     rows.iter().for_each(|row| data.extend_from_slice(&row));
-    let features = Array2::from_shape_vec((length, width), data).unwrap();
+    let features = Array2::from_shape_vec((row_count, column_count), data).unwrap();
 
     Ok((
         i,
         Pattern {
-            length,
-            width,
+            row_count,
+            column_count,
             features,
         },
     ))
 }
 
-type Score = u32;
+type Score = usize;
 
 impl Pattern {
     fn horizontal_line_of_reflection_score(&self) -> Score {
-        1
+        match (1..self.row_count).find(|i| {
+            let h = min(i.abs_diff(0), i.abs_diff(self.row_count));
+            let features_above = self.features.slice(s![*i - h..*i;-1, ..]);
+            let features_below = self.features.slice(s![*i..*i + h, ..]);
+            features_above
+                .iter()
+                .zip(features_below.iter())
+                .all(|(a, b)| a == b)
+        }) {
+            Some(row_index) => row_index,
+            None => 0,
+        }
     }
 
     fn vertical_line_of_reflection_score(&self) -> Score {
-        1
+        match (1..self.column_count).find(|j| {
+            let h = min(j.abs_diff(0), j.abs_diff(self.column_count));
+            let features_on_left = self.features.slice(s![.., *j - h..*j;-1]);
+            let features_on_right = self.features.slice(s![.., *j..*j + h]);
+            features_on_left
+                .iter()
+                .zip(features_on_right.iter())
+                .all(|(a, b)| a == b)
+        }) {
+            Some(column_index) => column_index,
+            None => 0,
+        }
     }
 
     fn score(&self) -> Score {
-        self.vertical_line_of_reflection_score()
-            + (100 * self.horizontal_line_of_reflection_score())
+        let a = self.vertical_line_of_reflection_score();
+        let b = self.horizontal_line_of_reflection_score();
+        a + (100 * b)
     }
 }
 
@@ -128,7 +152,7 @@ impl FromStr for Notes {
 
 pub fn part_one(input: &str) -> Option<Score> {
     let notes = Notes::from_str(input).ok()?;
-    println!("{:?}\n", notes);
+    // println!("{:?}\n", notes);
 
     let total = notes.patterns.iter().map(|pattern| pattern.score()).sum();
 

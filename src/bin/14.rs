@@ -110,6 +110,22 @@ impl FromStr for State {
             }),
         }
     }
+
+    /*fn tilted_in(&self, direction: Direction) -> Self {
+        let mut data = Vec::new();
+        self.maybe_rocks
+            .columns()
+            .into_iter()
+            .for_each(|rank| data.extend_from_slice(&rank));
+        let maybe_rocks =
+            Array2::from_shape_vec((self.row_count, self.column_count), data).unwrap();
+
+        Self {
+            row_count: self.row_count,
+            column_count: self.column_count,
+            maybe_rocks,
+        }
+    }*/
 }
 
 type Load = usize;
@@ -118,13 +134,22 @@ pub fn part_one(input: &str) -> Option<Load> {
     let state = State::from_str(input).ok()?;
     println!("{:?}\n", state);
 
-    /*let total = state
-    .rocks
-    .rows()
-    .map(|row| row.iter().filter(|rock| *rock == Rock::Round).count)
-    .sum();*/
+    let total = state
+        .maybe_rocks
+        .rows()
+        .into_iter()
+        .enumerate()
+        .map(|(row_index, row)| {
+            state.row_count.abs_diff(row_index)
+                * row
+                    .iter()
+                    .flatten()
+                    .filter(|&rock| *rock == Rock::Round)
+                    .count()
+        })
+        .sum();
 
-    Some(0)
+    Some(total)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {

@@ -17,9 +17,9 @@ use std::str::FromStr;
 enum Direction {
     #[default]
     North,
-    South,
-    East,
-    West,
+    _South,
+    _East,
+    _West,
 }
 
 #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
@@ -110,31 +110,44 @@ impl FromStr for State {
             }),
         }
     }
+}
 
-    /*fn tilted_in(&self, direction: Direction) -> Self {
+impl State {
+    fn tilted_in(&self, _direction: Direction) -> Self {
         let mut data = Vec::new();
-        self.maybe_rocks
-            .columns()
-            .into_iter()
-            .for_each(|rank| data.extend_from_slice(&rank));
-        let maybe_rocks =
-            Array2::from_shape_vec((self.row_count, self.column_count), data).unwrap();
+        for column in self.maybe_rocks.columns() {
+            column
+                .into_iter()
+                .group_by(|&maybe_rock| match maybe_rock {
+                    Some(Rock::Cubic) => false,
+                    _ => true,
+                })
+                .into_iter()
+                .map(|(_, group)| group.sorted().rev().collect::<Vec<&MaybeRock>>())
+                .flatten()
+                .for_each(|maybe_rock| data.push(*maybe_rock))
+        }
+        let tilted_maybe_rocks =
+            Array2::from_shape_vec((self.row_count, self.column_count).f(), data).unwrap();
 
-        Self {
+        State {
             row_count: self.row_count,
             column_count: self.column_count,
-            maybe_rocks,
+            maybe_rocks: tilted_maybe_rocks,
         }
-    }*/
+    }
 }
 
 type Load = usize;
 
 pub fn part_one(input: &str) -> Option<Load> {
     let state = State::from_str(input).ok()?;
-    println!("{:?}\n", state);
+    // println!("{:?}\n", state);
 
-    let total = state
+    let tilted_state = state.tilted_in(Direction::North);
+    // println!("{:?}\n", tilted_state);
+
+    let total = tilted_state
         .maybe_rocks
         .rows()
         .into_iter()

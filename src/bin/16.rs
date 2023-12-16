@@ -12,6 +12,7 @@ use nom::{
     Finish, IResult,
 };
 use std::collections::HashSet;
+use std::iter::once;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -320,8 +321,53 @@ pub fn part_one(input: &str) -> Option<usize> {
     }))
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<usize> {
+    let grid = Grid::from_str(input).ok()?;
+    // println!("{:?}", grid);
+
+    let max_energised_count_heading_south = (0..grid.column_count)
+        .map(|j| {
+            grid.energised_count_from(State {
+                index: [0, j as i32],
+                heading: Direction::South,
+            })
+        })
+        .max()?;
+
+    let max_energised_count_heading_north = (0..grid.column_count)
+        .map(|j| {
+            grid.energised_count_from(State {
+                index: [(grid.row_count - 1) as i32, j as i32],
+                heading: Direction::North,
+            })
+        })
+        .max()?;
+
+    let max_energised_count_heading_east = (0..grid.row_count)
+        .map(|i| {
+            grid.energised_count_from(State {
+                index: [i as i32, 0],
+                heading: Direction::East,
+            })
+        })
+        .max()?;
+
+    let max_energised_count_heading_west = (0..grid.row_count)
+        .map(|i| {
+            grid.energised_count_from(State {
+                index: [i as i32, (grid.column_count - 1) as i32],
+                heading: Direction::West,
+            })
+        })
+        .max()?;
+
+    let max_energised_count = once(max_energised_count_heading_south)
+        .chain(once(max_energised_count_heading_north))
+        .chain(once(max_energised_count_heading_east))
+        .chain(once(max_energised_count_heading_west))
+        .max()?;
+
+    Some(max_energised_count)
 }
 
 #[cfg(test)]
@@ -337,6 +383,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(51));
     }
 }

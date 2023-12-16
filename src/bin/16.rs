@@ -293,15 +293,20 @@ impl Grid {
         return &self.tiles[[i, j]];
     }
 
-    pub fn iter(&self) -> GridIterator {
+    fn indexed_iter_from(&self, state: State) -> GridIterator {
         GridIterator {
-            will_visit_states: vec![State {
-                index: [0, 0],
-                heading: Direction::East,
-            }],
+            will_visit_states: vec![state],
             did_visit_states: HashSet::new(),
             grid: self,
         }
+    }
+
+    fn energised_count_from(&self, state: State) -> usize {
+        let mut energised_indexes: IndexSet = IndexSet::new();
+        self.indexed_iter_from(state)
+            .map(|(index, _)| energised_indexes.insert(index))
+            .filter(|is_unique| *is_unique)
+            .count()
     }
 }
 
@@ -309,14 +314,10 @@ pub fn part_one(input: &str) -> Option<usize> {
     let grid = Grid::from_str(input).ok()?;
     // println!("{:?}", grid);
 
-    let mut energised_indexes: IndexSet = IndexSet::new();
-    let count = grid
-        .iter()
-        .map(|(index, _)| energised_indexes.insert(index))
-        .filter(|is_unique| *is_unique)
-        .count();
-
-    Some(count)
+    Some(grid.energised_count_from(State {
+        index: [0, 0],
+        heading: Direction::East,
+    }))
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {

@@ -11,15 +11,16 @@ use nom::{
     multi::separated_list1,
     Finish, IResult,
 };
+use pathfinding::directed::cycle_detection::brent;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
 enum Direction {
     #[default]
     North,
-    _South,
-    _East,
-    _West,
+    South,
+    East,
+    West,
 }
 
 #[derive(Copy, Clone, Debug, Default, Ord, PartialOrd, Eq, PartialEq)]
@@ -59,14 +60,8 @@ fn parse_ranks(input: &str) -> IResult<&str, Ranks> {
 }
 
 type MaybeRocks = Array<MaybeRock, Ix2>;
-// type Index = [usize; 2];
-// type Indexes = Vec<Index>;
-// type Rank = usize;
-// type Ranks = Vec<Rank>;
-// type File = usize;
-// type Files = Vec<File>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct State {
     row_count: usize,
     column_count: usize,
@@ -112,61 +107,134 @@ impl FromStr for State {
     }
 }
 
+type Load = usize;
+
 impl State {
-    fn tilted_in(&self, _direction: Direction) -> Self {
-        let mut data = Vec::new();
-        for column in self.maybe_rocks.columns() {
-            column
+    fn tilted_in(&self, direction: Direction) -> Self {
+        let data = match direction {
+            Direction::North => self
+                .maybe_rocks
+                .columns()
                 .into_iter()
-                .group_by(|&maybe_rock| match maybe_rock {
-                    Some(Rock::Cubic) => false,
-                    _ => true,
+                .map(|column| {
+                    column
+                        .into_iter()
+                        .group_by(|&maybe| maybe.map_or(false, |rock| rock == Rock::Cubic))
+                        .into_iter()
+                        .map(|(_, group)| group.sorted().rev().cloned())
+                        .flatten()
+                        .collect::<Vec<_>>()
                 })
-                .into_iter()
-                .map(|(_, group)| group.sorted().rev().collect::<Vec<&MaybeRock>>())
                 .flatten()
-                .for_each(|maybe_rock| data.push(*maybe_rock))
-        }
-        let tilted_maybe_rocks =
-            Array2::from_shape_vec((self.row_count, self.column_count).f(), data).unwrap();
+                .collect::<Vec<MaybeRock>>(),
+            Direction::South => self
+                .maybe_rocks
+                .columns()
+                .into_iter()
+                .map(|column| {
+                    column
+                        .into_iter()
+                        .group_by(|&maybe| maybe.map_or(false, |rock| rock == Rock::Cubic))
+                        .into_iter()
+                        .map(|(_, group)| group.sorted().cloned())
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .flatten()
+                .collect::<Vec<MaybeRock>>(),
+            Direction::East => self
+                .maybe_rocks
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .group_by(|&maybe| maybe.map_or(false, |rock| rock == Rock::Cubic))
+                        .into_iter()
+                        .map(|(_, group)| group.sorted().cloned())
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .flatten()
+                .collect::<Vec<MaybeRock>>(),
+            Direction::West => self
+                .maybe_rocks
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .group_by(|&maybe| maybe.map_or(false, |rock| rock == Rock::Cubic))
+                        .into_iter()
+                        .map(|(_, group)| group.sorted().rev().cloned())
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .flatten()
+                .collect::<Vec<MaybeRock>>(),
+        };
 
         State {
             row_count: self.row_count,
             column_count: self.column_count,
-            maybe_rocks: tilted_maybe_rocks,
+            maybe_rocks: match direction {
+                Direction::North | Direction::South => {
+                    Array2::from_shape_vec((self.row_count, self.column_count).f(), data).unwrap()
+                }
+                Direction::East | Direction::West => {
+                    Array2::from_shape_vec((self.row_count, self.column_count), data).unwrap()
+                }
+            },
         }
+    }
+
+    fn load(&self) -> Load {
+        self.maybe_rocks
+            .rows()
+            .into_iter()
+            .enumerate()
+            .map(|(row_index, row)| {
+                self.row_count.abs_diff(row_index)
+                    * row
+                        .iter()
+                        .flatten()
+                        .filter(|&rock| *rock == Rock::Round)
+                        .count()
+            })
+            .sum()
     }
 }
 
-type Load = usize;
-
 pub fn part_one(input: &str) -> Option<Load> {
-    let state = State::from_str(input).ok()?;
+    let mut state = State::from_str(input).ok()?;
     // println!("{:?}\n", state);
 
-    let tilted_state = state.tilted_in(Direction::North);
-    // println!("{:?}\n", tilted_state);
+    state = state.tilted_in(Direction::North);
+    // println!("{:?}\n", state);
 
-    let total = tilted_state
-        .maybe_rocks
-        .rows()
-        .into_iter()
-        .enumerate()
-        .map(|(row_index, row)| {
-            state.row_count.abs_diff(row_index)
-                * row
-                    .iter()
-                    .flatten()
-                    .filter(|&rock| *rock == Rock::Round)
-                    .count()
-        })
-        .sum();
-
-    Some(total)
+    Some(state.load())
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<Load> {
+    let state = State::from_str(input).ok()?;
+    // println!("{:?}", state.load());
+
+    fn successor(state: State) -> State {
+        let mut result = state.clone();
+        result = result.tilted_in(Direction::North);
+        result = result.tilted_in(Direction::West);
+        result = result.tilted_in(Direction::South);
+        result = result.tilted_in(Direction::East);
+        // println!("{:?}", result.load());
+
+        result
+    }
+
+    let (period, init_state, init_idx) = brent(state, successor);
+    // println!("{:?}", (period, init_idx));
+
+    let count = (1000000000 - init_idx) % period;
+    let final_state = (0..count).fold(init_state, |state, _| successor(state));
+
+    Some(final_state.load())
 }
 
 #[cfg(test)]
@@ -182,6 +250,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(64));
     }
 }

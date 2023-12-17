@@ -136,42 +136,67 @@ impl City {
     }
 
     fn maybe_state_ahead(&self, state: &State) -> MaybeState {
-        let [i, j] = state.index;
-        // Can continue ahead at run-lengths 1 and 2.
-        // Must turn at run-length 3.
-        // Otherwise, panic!
+        let State {
+            index: [i, j],
+            heading,
+            run_length,
+        } = *state;
+        match heading {
+            Heading::North if i > 0 => Some(State {
+                index: [i - 1, j],
+                heading: Heading::North,
+                run_length: run_length + 1,
+            }),
+            Heading::South if i < self.street_count - 1 => Some(State {
+                index: [i + 1, j],
+                heading: Heading::South,
+                run_length: run_length + 1,
+            }),
+            Heading::East if j < self.avenue_count - 1 => Some(State {
+                index: [i, j + 1],
+                heading: Heading::East,
+                run_length: run_length + 1,
+            }),
+            Heading::West if j > 0 => Some(State {
+                index: [i, j - 1],
+                heading: Heading::West,
+                run_length: run_length + 1,
+            }),
+            _ => None,
+        }
+    }
+
+    fn maybe_plain_state_ahead(&self, state: &State) -> MaybeState {
+        // Plain crucibles:
+        // - Can continue ahead at run-lengths 1 and 2.
+        // - Cannot continue ahead at run-length 3.
+        // - Otherwise, panic!
         match state.run_length {
-            run_length @ 1..=2 => match state.heading {
-                Heading::North if i > 0 => Some(State {
-                    index: [i - 1, j],
-                    heading: Heading::North,
-                    run_length: run_length + 1,
-                }),
-                Heading::South if i < self.street_count - 1 => Some(State {
-                    index: [i + 1, j],
-                    heading: Heading::South,
-                    run_length: run_length + 1,
-                }),
-                Heading::East if j < self.avenue_count - 1 => Some(State {
-                    index: [i, j + 1],
-                    heading: Heading::East,
-                    run_length: run_length + 1,
-                }),
-                Heading::West if j > 0 => Some(State {
-                    index: [i, j - 1],
-                    heading: Heading::West,
-                    run_length: run_length + 1,
-                }),
-                _ => None,
-            },
+            1..=2 => self.maybe_state_ahead(state),
             3 => None,
             _ => panic!(),
         }
     }
 
+    fn maybe_ultra_state_ahead(&self, state: &State) -> MaybeState {
+        // Ultra crucibles:
+        // - Can continue ahead at run-lengths 1, 2, 3, 4, 5, 6, 7, 8, 9.
+        // - Cannot continue ahead at run-length 10.
+        // - Otherwise, panic!
+        match state.run_length {
+            1..=9 => self.maybe_state_ahead(state),
+            10 => None,
+            _ => panic!(),
+        }
+    }
+
     fn maybe_state_on_left(&self, state: &State) -> MaybeState {
-        let [i, j] = state.index;
-        match state.heading {
+        let State {
+            index: [i, j],
+            heading,
+            run_length: _,
+        } = *state;
+        match heading {
             Heading::North if j > 0 => Some(State {
                 index: [i, j - 1],
                 heading: Heading::West,
@@ -196,9 +221,35 @@ impl City {
         }
     }
 
+    fn maybe_plain_state_on_left(&self, state: &State) -> MaybeState {
+        // Plain crucibles:
+        // - Can turn left at run-lengths 1, 2, or 3.
+        // - Otherwise, panic!
+        match state.run_length {
+            1..=3 => self.maybe_state_on_left(state),
+            _ => panic!(),
+        }
+    }
+
+    fn maybe_ultra_state_on_left(&self, state: &State) -> MaybeState {
+        // Ultra crucibles:
+        // - Cannot turn left at run-lengths 1, 2, or 3.
+        // - Can turn left at run lengths 4, 5, 6, 7, 8, 9, 10.
+        // - Otherwise, panic!
+        match state.run_length {
+            1..=3 => None,
+            4..=10 => self.maybe_state_on_left(state),
+            _ => panic!(),
+        }
+    }
+
     fn maybe_state_on_right(&self, state: &State) -> MaybeState {
-        let [i, j] = state.index;
-        match state.heading {
+        let State {
+            index: [i, j],
+            heading,
+            run_length: _,
+        } = *state;
+        match heading {
             Heading::North if j < self.avenue_count - 1 => Some(State {
                 index: [i, j + 1],
                 heading: Heading::East,
@@ -223,17 +274,52 @@ impl City {
         }
     }
 
-    fn next_states_with_losses(&self, state: &State) -> CostedStates {
-        once(self.maybe_state_ahead(state))
-            .chain(once(self.maybe_state_on_left(state)))
-            .chain(once(self.maybe_state_on_right(state)))
+    fn maybe_plain_state_on_right(&self, state: &State) -> MaybeState {
+        // Plain crucibles:
+        // - Can turn right at run-lengths 1, 2, or 3.
+        // - Otherwise, panic!
+        match state.run_length {
+            1..=3 => self.maybe_state_on_right(state),
+            _ => panic!(),
+        }
+    }
+
+    fn maybe_ultra_state_on_right(&self, state: &State) -> MaybeState {
+        // Ultra crucibles:
+        // - Cannot turn right at run-lengths 1, 2, or 3.
+        // - Can turn right at run lengths 4, 5, 6, 7, 8, 9, 10.
+        // - Otherwise, panic!
+        match state.run_length {
+            1..=3 => None,
+            4..=10 => self.maybe_state_on_right(state),
+            _ => panic!(),
+        }
+    }
+
+    fn next_plain_states_with_losses(&self, state: &State) -> CostedStates {
+        once(self.maybe_plain_state_ahead(state))
+            .chain(once(self.maybe_plain_state_on_left(state)))
+            .chain(once(self.maybe_plain_state_on_right(state)))
             .flatten()
             .map(|state| (state, self.block_at(state.index).cost))
             .collect()
     }
 
-    fn did_reach_goal(&self, state: &State) -> bool {
+    fn next_ultra_states_with_losses(&self, state: &State) -> CostedStates {
+        once(self.maybe_ultra_state_ahead(state))
+            .chain(once(self.maybe_ultra_state_on_left(state)))
+            .chain(once(self.maybe_ultra_state_on_right(state)))
+            .flatten()
+            .map(|state| (state, self.block_at(state.index).cost))
+            .collect()
+    }
+
+    fn did_reach_plain_goal(&self, state: &State) -> bool {
         state.index == self.goal_index
+    }
+
+    fn did_reach_ultra_goal(&self, state: &State) -> bool {
+        state.index == self.goal_index && state.run_length >= 4
     }
 }
 
@@ -241,36 +327,60 @@ pub fn part_one(input: &str) -> Option<Cost> {
     let city = City::from_str(input).ok()?;
     // println!("{:?}", city);
 
-    let start_state_heading_east = State {
-        index: city.start_index,
-        heading: Heading::East,
-        run_length: 1,
-    };
-    let (_, minimal_loss_heading_east) = dijkstra(
-        &start_state_heading_east,
-        |state| city.next_states_with_losses(state),
-        |state| city.did_reach_goal(state),
+    let (_, minimal_cost_heading_east) = dijkstra(
+        &State {
+            index: city.start_index,
+            heading: Heading::East,
+            run_length: 1,
+        },
+        |state| city.next_plain_states_with_losses(state),
+        |state| city.did_reach_plain_goal(state),
     )?;
 
-    let start_state_heading_south = State {
-        index: city.start_index,
-        heading: Heading::South,
-        run_length: 1,
-    };
-    let (_, minimal_loss_heading_south) = dijkstra(
-        &start_state_heading_south,
-        |state| city.next_states_with_losses(state),
-        |state| city.did_reach_goal(state),
+    let (_, minimal_cost_heading_south) = dijkstra(
+        &State {
+            index: city.start_index,
+            heading: Heading::South,
+            run_length: 1,
+        },
+        |state| city.next_plain_states_with_losses(state),
+        |state| city.did_reach_plain_goal(state),
     )?;
 
     Some(std::cmp::min(
-        minimal_loss_heading_east,
-        minimal_loss_heading_south,
+        minimal_cost_heading_east,
+        minimal_cost_heading_south,
     ))
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<u32> {
+    let city = City::from_str(input).ok()?;
+    // println!("{:?}", city);
+
+    let (_, minimal_cost_heading_east) = dijkstra(
+        &State {
+            index: city.start_index,
+            heading: Heading::East,
+            run_length: 1,
+        },
+        |state| city.next_ultra_states_with_losses(state),
+        |state| city.did_reach_ultra_goal(state),
+    )?;
+
+    let (_, minimal_cost_heading_south) = dijkstra(
+        &State {
+            index: city.start_index,
+            heading: Heading::South,
+            run_length: 1,
+        },
+        |state| city.next_ultra_states_with_losses(state),
+        |state| city.did_reach_ultra_goal(state),
+    )?;
+
+    Some(std::cmp::min(
+        minimal_cost_heading_east,
+        minimal_cost_heading_south,
+    ))
 }
 
 #[cfg(test)]
@@ -286,6 +396,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(94));
     }
 }

@@ -279,6 +279,22 @@ mod tests {
     }
 
     #[test]
+    fn test_part_one_trial_one() {
+        let result = part_one(&advent_of_code::template::read_file_for_trial(
+            "examples", DAY, "1",
+        ));
+        assert_eq!(result, Some(15));
+    }
+
+    #[test]
+    fn test_part_one_trial_two() {
+        let result = part_one(&advent_of_code::template::read_file_for_trial(
+            "examples", DAY, "2",
+        ));
+        assert_eq!(result, Some(32));
+    }
+
+    #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
         assert_eq!(result, None);

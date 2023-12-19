@@ -34,7 +34,7 @@ fn parse_direction(input: &str) -> IResult<&str, Direction> {
     Ok((i, direction))
 }
 
-type Increment = i32;
+type Increment = usize;
 
 fn parse_increment(input: &str) -> IResult<&str, Increment> {
     let (i, increment) = map_res(digit1, str::parse)(input)?;
@@ -110,10 +110,7 @@ impl FromStr for Plan {
     }
 }
 
-type Coordinate = i32;
-type Coordinates = Vec<Coordinate>;
-type CoordinatesByGroup = Vec<Coordinates>;
-type CoordinatesByGroupByGroup = Vec<CoordinatesByGroup>;
+type Coordinate = isize;
 
 #[derive(Copy, Clone, Debug, Hash)]
 struct Index {
@@ -149,41 +146,47 @@ impl Ord for Index {
 
 impl Index {
     fn incremented(&self, increment: &Increment, direction: &Direction) -> Index {
+        let increment_as_coord = *increment as Coordinate;
         match direction {
             Direction::Up => Index {
                 x: self.x,
-                y: self.y + increment,
+                y: self.y + increment_as_coord,
             },
             Direction::Down => Index {
                 x: self.x,
-                y: self.y - increment,
+                y: self.y - increment_as_coord,
             },
             Direction::Left => Index {
-                x: self.x - increment,
+                x: self.x - increment_as_coord,
                 y: self.y,
             },
             Direction::Right => Index {
-                x: self.x + increment,
+                x: self.x + increment_as_coord,
                 y: self.y,
             },
         }
     }
 }
 
+type Capacity = usize;
 type Indexes = Vec<Index>;
 
 #[derive(Debug)]
 struct Lagoon {
-    trench_indexes: Indexes,
-    xs_by_rank_by_run: CoordinatesByGroupByGroup,
+    perimeter: Capacity,
+    vertices: Indexes,
 }
-
-type Capacity = usize;
 
 impl Lagoon {
     fn from_plan(plan: &Plan) -> Lagoon {
+        let perimeter = plan
+            .instructions
+            .iter()
+            .map(|instruction| instruction.increment)
+            .sum();
+
         let origin = Index { x: 0, y: 0 };
-        let trench_indexes = plan
+        let vertices = plan
             .instructions
             .iter()
             .scan(origin, |index, instruction| {
@@ -192,76 +195,42 @@ impl Lagoon {
                     increment,
                     color: _,
                 } = instruction;
-                let indexes = (1..=*increment)
-                    .map(|k| index.incremented(&k, direction))
-                    .collect::<Indexes>();
-                println!("{:?}", indexes);
-
                 *index = index.incremented(increment, direction);
-
-                Some(indexes)
+                Some(*index)
             })
-            .flatten()
-            .inspect(|index| println!("{:?}", index))
-            .sorted()
             .collect::<Indexes>();
 
-        let xs_by_rank_by_run = trench_indexes
-            .iter()
-            .group_by(|&index| index.y)
-            .into_iter()
-            .map(|(_, indexes)| {
-                indexes
-                    .into_iter()
-                    .map(|index| index.x)
-                    .enumerate()
-                    .group_by(|(i, x)| *x as usize - *i)
-                    .into_iter()
-                    .map(|(_, group)| group.map(|(_, x)| x).collect())
-                    .collect()
-            })
-            .collect();
-
         Lagoon {
-            trench_indexes,
-            xs_by_rank_by_run,
+            perimeter,
+            vertices,
         }
     }
 
-    fn trench_capacity(&self) -> Capacity {
-        self.trench_indexes.len()
-    }
-
     fn capacity(&self) -> Capacity {
-        self.xs_by_rank_by_run
+        // Shoelace formula for area of polygon from vertices...
+        // And combine with Pick's Theorem for the number of interior points...
+        let twice_area = self
+            .vertices
             .iter()
-            .inspect(|xs_for_rank_by_run| println!("{:?}", xs_for_rank_by_run))
-            .map(|xs_for_rank_by_run| {
-                xs_for_rank_by_run
-                    .iter()
-                    .tuples()
-                    .map(|(xs_for_run, xs_for_next_run)| {
-                        (xs_for_next_run.first().unwrap() - xs_for_run.last().unwrap()) as usize - 1
-                    })
-                    .sum::<Capacity>()
-            })
-            .sum::<Capacity>()
-            + self.trench_capacity()
+            .cycle()
+            .tuple_windows()
+            .take(self.vertices.len())
+            .map(|(a, b, c)| b.x * (c.y - a.y))
+            .sum::<Coordinate>()
+            .abs() as Capacity;
+
+        1 + ((self.perimeter + twice_area) / 2)
     }
 }
 
 pub fn part_one(input: &str) -> Option<Capacity> {
     let plan = Plan::from_str(input).ok()?;
-    println!("{:?}", plan);
+    // println!("{:?}", plan);
 
     let lagoon = Lagoon::from_plan(&plan);
-    println!("{:?}", lagoon);
+    // println!("{:?}", lagoon);
 
-    let capacity = lagoon.capacity();
-    println!("{:?}", capacity);
-    println!("{:?}", lagoon.trench_capacity());
-
-    Some(capacity)
+    Some(lagoon.capacity())
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {

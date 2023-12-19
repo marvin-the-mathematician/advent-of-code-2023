@@ -1,6 +1,7 @@
 advent_of_code::solution!(18);
 
 use hex_color::HexColor;
+use itertools::Itertools;
 use nom::{
     branch::alt,
     character::complete::{char, digit1, hex_digit1, newline},
@@ -10,6 +11,7 @@ use nom::{
     sequence::{delimited, preceded, separated_pair, terminated},
     Finish, IResult,
 };
+use std::cmp::Ordering;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -32,11 +34,11 @@ fn parse_direction(input: &str) -> IResult<&str, Direction> {
     Ok((i, direction))
 }
 
-type Meters = u32;
+type Increment = i32;
 
-fn parse_meters(input: &str) -> IResult<&str, Meters> {
-    let (i, meters) = map_res(digit1, str::parse)(input)?;
-    Ok((i, meters))
+fn parse_increment(input: &str) -> IResult<&str, Increment> {
+    let (i, increment) = map_res(digit1, str::parse)(input)?;
+    Ok((i, increment))
 }
 
 fn parse_hex_color(input: &str) -> IResult<&str, HexColor> {
@@ -57,21 +59,21 @@ fn parse_color(input: &str) -> IResult<&str, Color> {
 #[derive(Debug, Eq, PartialEq)]
 struct Instruction {
     direction: Direction,
-    meters: Meters,
+    increment: Increment,
     color: Color,
 }
 
 fn parse_instruction(input: &str) -> IResult<&str, Instruction> {
-    let (i, (direction, (meters, color))) = separated_pair(
+    let (i, (direction, (increment, color))) = separated_pair(
         parse_direction,
         char(' '),
-        separated_pair(parse_meters, char(' '), parse_color),
+        separated_pair(parse_increment, char(' '), parse_color),
     )(input)?;
     Ok((
         i,
         Instruction {
             direction,
-            meters,
+            increment,
             color,
         },
     ))
@@ -108,11 +110,158 @@ impl FromStr for Plan {
     }
 }
 
-pub fn part_one(input: &str) -> Option<u32> {
+type Coordinate = i32;
+type Coordinates = Vec<Coordinate>;
+type CoordinatesByGroup = Vec<Coordinates>;
+type CoordinatesByGroupByGroup = Vec<CoordinatesByGroup>;
+
+#[derive(Copy, Clone, Debug, Hash)]
+struct Index {
+    x: Coordinate, // Increases rightwards.
+    y: Coordinate, // Increase upwards.
+}
+
+impl PartialEq for Index {
+    fn eq(&self, other: &Self) -> bool {
+        self.y == other.y && self.x == other.x
+    }
+}
+
+impl Eq for Index {}
+
+impl PartialOrd for Index {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match other.y.partial_cmp(&self.y) {
+            Some(Ordering::Equal) => self.x.partial_cmp(&other.x),
+            result @ _ => result,
+        }
+    }
+}
+
+impl Ord for Index {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match other.y.cmp(&self.y) {
+            Ordering::Equal => self.x.cmp(&other.x),
+            result @ _ => result,
+        }
+    }
+}
+
+impl Index {
+    fn incremented(&self, increment: &Increment, direction: &Direction) -> Index {
+        match direction {
+            Direction::Up => Index {
+                x: self.x,
+                y: self.y + increment,
+            },
+            Direction::Down => Index {
+                x: self.x,
+                y: self.y - increment,
+            },
+            Direction::Left => Index {
+                x: self.x - increment,
+                y: self.y,
+            },
+            Direction::Right => Index {
+                x: self.x + increment,
+                y: self.y,
+            },
+        }
+    }
+}
+
+type Indexes = Vec<Index>;
+
+#[derive(Debug)]
+struct Lagoon {
+    trench_indexes: Indexes,
+    xs_by_rank_by_run: CoordinatesByGroupByGroup,
+}
+
+type Capacity = usize;
+
+impl Lagoon {
+    fn from_plan(plan: &Plan) -> Lagoon {
+        let origin = Index { x: 0, y: 0 };
+        let trench_indexes = plan
+            .instructions
+            .iter()
+            .scan(origin, |index, instruction| {
+                let Instruction {
+                    direction,
+                    increment,
+                    color: _,
+                } = instruction;
+                let indexes = (1..=*increment)
+                    .map(|k| index.incremented(&k, direction))
+                    .collect::<Indexes>();
+                println!("{:?}", indexes);
+
+                *index = index.incremented(increment, direction);
+
+                Some(indexes)
+            })
+            .flatten()
+            .inspect(|index| println!("{:?}", index))
+            .sorted()
+            .collect::<Indexes>();
+
+        let xs_by_rank_by_run = trench_indexes
+            .iter()
+            .group_by(|&index| index.y)
+            .into_iter()
+            .map(|(_, indexes)| {
+                indexes
+                    .into_iter()
+                    .map(|index| index.x)
+                    .enumerate()
+                    .group_by(|(i, x)| *x as usize - *i)
+                    .into_iter()
+                    .map(|(_, group)| group.map(|(_, x)| x).collect())
+                    .collect()
+            })
+            .collect();
+
+        Lagoon {
+            trench_indexes,
+            xs_by_rank_by_run,
+        }
+    }
+
+    fn trench_capacity(&self) -> Capacity {
+        self.trench_indexes.len()
+    }
+
+    fn capacity(&self) -> Capacity {
+        self.xs_by_rank_by_run
+            .iter()
+            .inspect(|xs_for_rank_by_run| println!("{:?}", xs_for_rank_by_run))
+            .map(|xs_for_rank_by_run| {
+                xs_for_rank_by_run
+                    .iter()
+                    .tuples()
+                    .map(|(xs_for_run, xs_for_next_run)| {
+                        (xs_for_next_run.first().unwrap() - xs_for_run.last().unwrap()) as usize - 1
+                    })
+                    .sum::<Capacity>()
+            })
+            .sum::<Capacity>()
+            + self.trench_capacity()
+    }
+}
+
+pub fn part_one(input: &str) -> Option<Capacity> {
     let plan = Plan::from_str(input).ok()?;
     println!("{:?}", plan);
 
-    Some(0)
+    let lagoon = Lagoon::from_plan(&plan);
+    println!("{:?}", lagoon);
+
+    let capacity = lagoon.capacity();
+    println!("{:?}", capacity);
+    println!("{:?}", lagoon.trench_capacity());
+
+    Some(capacity)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {

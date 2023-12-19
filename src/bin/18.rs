@@ -1,14 +1,14 @@
 advent_of_code::solution!(18);
 
-use hex_color::HexColor;
 use itertools::Itertools;
 use nom::{
     branch::alt,
-    character::complete::{char, digit1, hex_digit1, newline},
-    combinator::{map_res, recognize},
+    bytes::complete::take,
+    character::complete::{char, digit1, newline},
+    combinator::map_res,
     error::Error,
     multi::separated_list1,
-    sequence::{delimited, preceded, separated_pair, terminated},
+    sequence::{delimited, preceded, separated_pair, terminated, tuple},
     Finish, IResult,
 };
 use std::cmp::Ordering;
@@ -37,23 +37,53 @@ fn parse_direction(input: &str) -> IResult<&str, Direction> {
 type Increment = usize;
 
 fn parse_increment(input: &str) -> IResult<&str, Increment> {
-    let (i, increment) = map_res(digit1, str::parse)(input)?;
+    let (i, increment) = map_res(digit1, str::parse::<Increment>)(input)?;
     Ok((i, increment))
 }
 
-fn parse_hex_color(input: &str) -> IResult<&str, HexColor> {
-    let (i, hex_color) = map_res(
-        recognize(preceded(char('#'), hex_digit1)),
-        HexColor::parse_rgb,
-    )(input)?;
-    Ok((i, hex_color))
+#[derive(Debug, Eq, PartialEq)]
+struct Color {
+    direction: Direction,
+    increment: Increment,
 }
 
-type Color = HexColor;
+fn parse_coded_direction(input: &str) -> IResult<&str, Direction> {
+    let (i, c) = alt((char('0'), char('1'), char('2'), char('3')))(input)?;
+    let direction = match c {
+        '0' => Direction::Right,
+        '1' => Direction::Down,
+        '2' => Direction::Left,
+        '3' => Direction::Up,
+        _ => panic!(),
+    };
+    Ok((i, direction))
+}
+
+fn parse_5_chars(s: &str) -> IResult<&str, &str> {
+    take(5usize)(s)
+}
+
+fn parse_coded_increment(input: &str) -> IResult<&str, Increment> {
+    let (i, increment) = map_res(parse_5_chars, |s: &str| Increment::from_str_radix(s, 16))(input)?;
+    Ok((i, increment))
+}
 
 fn parse_color(input: &str) -> IResult<&str, Color> {
-    let (i, color) = delimited(char('('), parse_hex_color, char(')'))(input)?;
-    Ok((i, color))
+    let (i, (increment, direction)) = delimited(
+        char('('),
+        preceded(
+            char('#'),
+            tuple((parse_coded_increment, parse_coded_direction)),
+        ),
+        char(')'),
+    )(input)?;
+    Ok((
+        i,
+        Color {
+            direction,
+            increment,
+        },
+    ))
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -175,6 +205,8 @@ type Indexes = Vec<Index>;
 struct Lagoon {
     perimeter: Capacity,
     vertices: Indexes,
+    decoded_perimeter: Capacity,
+    decoded_vertices: Indexes,
 }
 
 impl Lagoon {
@@ -183,6 +215,12 @@ impl Lagoon {
             .instructions
             .iter()
             .map(|instruction| instruction.increment)
+            .sum();
+
+        let decoded_perimeter = plan
+            .instructions
+            .iter()
+            .map(|instruction| instruction.color.increment)
             .sum();
 
         let origin = Index { x: 0, y: 0 };
@@ -200,9 +238,25 @@ impl Lagoon {
             })
             .collect::<Indexes>();
 
+        let decoded_vertices = plan
+            .instructions
+            .iter()
+            .scan(origin, |index, instruction| {
+                let Instruction {
+                    direction: _,
+                    increment: _,
+                    color,
+                } = instruction;
+                *index = index.incremented(&color.increment, &color.direction);
+                Some(*index)
+            })
+            .collect::<Indexes>();
+
         Lagoon {
             perimeter,
             vertices,
+            decoded_perimeter,
+            decoded_vertices,
         }
     }
 
@@ -221,6 +275,22 @@ impl Lagoon {
 
         1 + ((self.perimeter + twice_area) / 2)
     }
+
+    fn decoded_capacity(&self) -> Capacity {
+        // Shoelace formula for area of polygon from vertices...
+        // And combine with Pick's Theorem for the number of interior points...
+        let twice_area = self
+            .decoded_vertices
+            .iter()
+            .cycle()
+            .tuple_windows()
+            .take(self.decoded_vertices.len())
+            .map(|(a, b, c)| b.x * (c.y - a.y))
+            .sum::<Coordinate>()
+            .abs() as Capacity;
+
+        1 + ((self.decoded_perimeter + twice_area) / 2)
+    }
 }
 
 pub fn part_one(input: &str) -> Option<Capacity> {
@@ -233,8 +303,14 @@ pub fn part_one(input: &str) -> Option<Capacity> {
     Some(lagoon.capacity())
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<Capacity> {
+    let plan = Plan::from_str(input).ok()?;
+    // println!("{:?}", plan);
+
+    let lagoon = Lagoon::from_plan(&plan);
+    // println!("{:?}", lagoon);
+
+    Some(lagoon.decoded_capacity())
 }
 
 #[cfg(test)]
@@ -266,6 +342,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(952408144115));
     }
 }

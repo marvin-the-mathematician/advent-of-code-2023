@@ -1,6 +1,5 @@
 advent_of_code::solution!(19);
 
-use itertools::Itertools;
 use nom::{
     branch::alt,
     character::complete::{alpha1, char, digit1, newline},
@@ -58,7 +57,51 @@ fn parse_rating(input: &str) -> IResult<&str, Rating> {
     Ok((i, rating))
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Part {
+    rating_for_category: HashMap<Category, Rating>,
+}
+
+type Entry = (Category, Rating);
+
+fn parse_entry(input: &str) -> IResult<&str, Entry> {
+    // x=787
+    let (i, entry) = separated_pair(parse_category, char('='), parse_rating)(input)?;
+    Ok((i, entry))
+}
+
+fn parse_part(input: &str) -> IResult<&str, Part> {
+    //{x=787,m=2655,a=1222,s=2876}
+    let (i, entries) = delimited(
+        char('{'),
+        separated_list1(char(','), parse_entry),
+        char('}'),
+    )(input)?;
+    Ok((
+        i,
+        Part {
+            rating_for_category: entries.into_iter().collect(),
+        },
+    ))
+}
+
+impl Part {
+    fn overall_rating(&self) -> Rating {
+        self.rating_for_category
+            .iter()
+            .map(|(_, &rating)| rating)
+            .sum()
+    }
+}
+
+type Parts = Vec<Part>;
+
+fn parse_parts(input: &str) -> IResult<&str, Parts> {
+    let (i, parts) = separated_list1(newline, parse_part)(input)?;
+    Ok((i, parts))
+}
+
+#[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct Predicate {
     category: Category,
     operator: Operator,
@@ -77,6 +120,15 @@ fn parse_predicate(input: &str) -> IResult<&str, Predicate> {
             threshold,
         },
     ))
+}
+
+impl Predicate {
+    fn evaluate(&self, part: &Part) -> bool {
+        match self.operator {
+            Operator::LessThan => part.rating_for_category[&self.category] < self.threshold,
+            Operator::GreaterThan => part.rating_for_category[&self.category] > self.threshold,
+        }
+    }
 }
 
 type Name = String;
@@ -136,6 +188,15 @@ fn parse_rule(input: &str) -> IResult<&str, Rule> {
     ))
 }
 
+impl Rule {
+    fn assess(&self, part: &Part) -> bool {
+        match self.maybe_predicate {
+            Some(predicate) => predicate.evaluate(part),
+            None => true,
+        }
+    }
+}
+
 type Rules = Vec<Rule>;
 
 fn parse_rules(input: &str) -> IResult<&str, Rules> {
@@ -157,20 +218,6 @@ fn parse_workflow(input: &str) -> IResult<&str, Workflow> {
     Ok((i, Workflow { name, rules }))
 }
 
-impl FromStr for Workflow {
-    type Err = Error<String>;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match parse_workflow(s).finish() {
-            Ok((_, workflow)) => Ok(workflow),
-            Err(Error { input, code }) => Err(Error {
-                input: input.to_string(),
-                code,
-            }),
-        }
-    }
-}
-
 type Workflows = Vec<Workflow>;
 
 fn parse_workflows(input: &str) -> IResult<&str, Workflows> {
@@ -180,59 +227,61 @@ fn parse_workflows(input: &str) -> IResult<&str, Workflows> {
 
 type WorkflowForName = HashMap<Name, Workflow>;
 
-#[derive(Debug, Eq, PartialEq)]
-struct Part {
-    rating_for_category: HashMap<Category, Rating>,
+#[derive(Debug)]
+struct Processor {
+    workflow_for_name: WorkflowForName,
 }
 
-type Entry = (Category, Rating);
-
-fn parse_entry(input: &str) -> IResult<&str, Entry> {
-    // x=787
-    let (i, entry) = separated_pair(parse_category, char('='), parse_rating)(input)?;
-    Ok((i, entry))
-}
-
-fn parse_part(input: &str) -> IResult<&str, Part> {
-    //{x=787,m=2655,a=1222,s=2876}
-    let (i, entries) = delimited(
-        char('{'),
-        separated_list1(char(','), parse_entry),
-        char('}'),
-    )(input)?;
+fn parse_processor(input: &str) -> IResult<&str, Processor> {
+    let (i, workflows) = parse_workflows(input)?;
     Ok((
         i,
-        Part {
-            rating_for_category: entries.into_iter().collect(),
+        Processor {
+            workflow_for_name: workflows
+                .into_iter()
+                .map(|workflow| (workflow.name.clone(), workflow))
+                .collect(),
         },
     ))
 }
 
-type Parts = Vec<Part>;
-
-fn parse_parts(input: &str) -> IResult<&str, Parts> {
-    let (i, parts) = separated_list1(newline, parse_part)(input)?;
-    Ok((i, parts))
+impl Processor {
+    fn is_acceptable(&self, part: &Part) -> bool {
+        let mut outcome = Outcome::Delegate(Name::from("in"));
+        while let Outcome::Delegate(name) = outcome {
+            outcome = self.workflow_for_name[&name]
+                .rules
+                .iter()
+                .find(|&rule| rule.assess(part))
+                .map(|rule| rule.outcome.clone())
+                .unwrap();
+        }
+        match outcome {
+            Outcome::Accept => true,
+            Outcome::Reject => false,
+            Outcome::Delegate(_) => panic!(),
+        }
+    }
 }
 
 #[derive(Debug)]
-struct Processor {
-    workflows: Workflows,
+struct Task {
+    processor: Processor,
     parts: Parts,
 }
 
-fn parse_processor(input: &str) -> IResult<&str, Processor> {
-    let (i, (workflows, parts)) =
-        separated_pair(parse_workflows, count(newline, 2), parse_parts)(input)?;
-    Ok((i, Processor { workflows, parts }))
+fn parse_task(input: &str) -> IResult<&str, Task> {
+    let (i, (processor, parts)) =
+        separated_pair(parse_processor, count(newline, 2), parse_parts)(input)?;
+    Ok((i, Task { processor, parts }))
 }
 
-impl FromStr for Processor {
+impl FromStr for Task {
     type Err = Error<String>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match parse_processor(s).finish() {
-            Ok((_, processor)) => Ok(processor),
+        match parse_task(s).finish() {
+            Ok((_, task)) => Ok(task),
             Err(Error { input, code }) => Err(Error {
                 input: input.to_string(),
                 code,
@@ -241,11 +290,18 @@ impl FromStr for Processor {
     }
 }
 
-pub fn part_one(input: &str) -> Option<u32> {
-    let processor = Processor::from_str(input).ok()?;
-    println!("{:?}", processor);
+pub fn part_one(input: &str) -> Option<Rating> {
+    let task = Task::from_str(input).ok()?;
+    // println!("{:?}", task);
 
-    None
+    let result = task
+        .parts
+        .iter()
+        .filter(|part| task.processor.is_acceptable(part))
+        .map(|part| part.overall_rating())
+        .sum();
+
+    Some(result)
 }
 
 pub fn part_two(_input: &str) -> Option<u32> {
@@ -259,7 +315,7 @@ mod tests {
     #[test]
     fn test_part_one() {
         let result = part_one(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(19114));
     }
 
     #[test]

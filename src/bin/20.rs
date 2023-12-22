@@ -313,44 +313,78 @@ impl FromStr for Configuration {
     }
 }
 
+#[derive(Debug)]
+struct MessageIterator<'a> {
+    message_queue: MessageQueue,
+    configuration: &'a mut Configuration,
+}
+
+impl<'a> Iterator for MessageIterator<'a> {
+    type Item = Message;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let message = self.message_queue.pop_front()?;
+        let module = match self
+            .configuration
+            .module_for_name
+            .get_mut(&message.receiver_name)
+        {
+            None => return Some(message),
+            Some(module) => module,
+        };
+
+        let messages = match module
+            .relay
+            .handle(&message, &module.name, &module.receiver_names)
+        {
+            None => return Some(message),
+            Some(messages) => messages,
+        };
+        messages
+            .into_iter()
+            .for_each(|message| self.message_queue.push_back(message));
+
+        Some(message)
+    }
+}
+
 impl Configuration {
-    fn push_button(&mut self) -> (Count, Count) {
-        let mut low_pulse_count: Count = 0;
-        let mut high_pulse_count: Count = 0;
-        let message = Message {
+    fn messages(&mut self) -> MessageIterator {
+        let mut message_queue = MessageQueue::new();
+        message_queue.push_back(Message {
             sender_name: Name::from("button"),
             receiver_name: Name::from("broadcaster"),
             pulse: Pulse::Low,
-        };
+        });
 
-        let mut message_queue = MessageQueue::new();
-        message_queue.push_back(message);
-        while let Some(message) = message_queue.pop_front() {
-            println!("{:?}", message);
-            let Message {
+        MessageIterator {
+            message_queue,
+            configuration: self,
+        }
+    }
+
+    fn push_button_and_count_pulses(&mut self) -> (Count, Count) {
+        self.messages()
+            .fold((0, 0), |(a, b), message| match message.pulse {
+                Pulse::Low => (a + 1, b),
+                Pulse::High => (a, b + 1),
+            })
+    }
+
+    fn push_button_and_did_send_low_pulse_to_rx_module(&mut self) -> bool {
+        let rx_module_name = Name::from("rx");
+        self.messages().any(|message| {
+            if let Message {
                 sender_name: _,
                 receiver_name,
-                pulse,
-            } = &message;
-            match pulse {
-                Pulse::Low => low_pulse_count += 1,
-                Pulse::High => high_pulse_count += 1,
+                pulse: Pulse::Low,
+            } = message
+            {
+                receiver_name == rx_module_name
+            } else {
+                false
             }
-            if let Some(module) = self.module_for_name.get_mut(receiver_name) {
-                if let Some(messages) =
-                    module
-                        .relay
-                        .handle(&message, &module.name, &module.receiver_names)
-                {
-                    messages
-                        .into_iter()
-                        .for_each(|message| message_queue.push_back(message));
-                }
-            }
-        }
-        println!();
-
-        (low_pulse_count, high_pulse_count)
+        })
     }
 }
 
@@ -358,9 +392,10 @@ pub fn part_one(input: &str) -> Option<Count> {
     let mut configuration = Configuration::from_str(input).ok()?;
     // println!("{:?}\n", configuration);
 
-    let (low_pulse_count, high_pulse_count) = repeat_with(|| configuration.push_button())
-        .take(1000)
-        .reduce(|(a, b), (x, y)| (a + x, b + y))?;
+    let (low_pulse_count, high_pulse_count) =
+        repeat_with(|| configuration.push_button_and_count_pulses())
+            .take(1000)
+            .reduce(|(a, b), (x, y)| (a + x, b + y))?;
     println!(
         "low_pulse_count: {:?}, high_pulse_count: {:?}",
         low_pulse_count, high_pulse_count
@@ -373,15 +408,12 @@ pub fn part_two(input: &str) -> Option<Count> {
     let mut configuration = Configuration::from_str(input).ok()?;
     // println!("{:?}\n", configuration);
 
-    let (low_pulse_count, high_pulse_count) = repeat_with(|| configuration.push_button())
-        .take(1000)
-        .reduce(|(a, b), (x, y)| (a + x, b + y))?;
-    println!(
-        "low_pulse_count: {:?}, high_pulse_count: {:?}",
-        low_pulse_count, high_pulse_count
-    );
+    let count = repeat_with(|| configuration.push_button_and_did_send_low_pulse_to_rx_module())
+        .take_while(|x| !x)
+        .count()
+        + 1;
 
-    Some(low_pulse_count * high_pulse_count)
+    Some(count)
 }
 
 #[cfg(test)]
@@ -406,5 +438,13 @@ mod tests {
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_part_one_trial_two() {
+        let result = part_two(&advent_of_code::template::read_file_for_trial(
+            "examples", DAY, "2",
+        ));
+        assert_eq!(result, Some(1));
     }
 }
